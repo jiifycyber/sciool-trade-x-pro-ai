@@ -1,0 +1,13 @@
+TradeX Intelligence — 250 Indicator Inventory
+
+Trend modules: 86
+Momentum modules: 96
+Volatility modules: 64
+Structure modules: 4
+Total: 250
+
+All modules are implemented in:
+lib/src/indicators/titan_indicator_pack_250.dart
+
+Automated validation:
+test/indicator_pack_250_test.dart
