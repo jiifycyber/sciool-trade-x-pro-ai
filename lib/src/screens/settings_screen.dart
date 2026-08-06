@@ -45,7 +45,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Active Strategy', style: Theme.of(context).textTheme.titleLarge),
+                  Text('Active Strategy',
+                      style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 6),
                   Text(strategy.name),
                   const SizedBox(height: 4),
@@ -57,7 +58,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          _section('1-Minute Strategy'),
+          _section('Strategy Settings'),
+          _numberRow(
+            'Expiration time (minutes)',
+            strategy.timeframeMinutes,
+            1,
+            5,
+            (v) => strategy = strategy.copyWith(timeframeMinutes: v),
+          ),
           _numberRow('EMA fast', strategy.emaFast, 2, 50,
               (v) => strategy = strategy.copyWith(emaFast: v)),
           _numberRow('EMA slow', strategy.emaSlow, 3, 100,
@@ -82,15 +90,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               (v) => strategy = strategy.copyWith(bollingerPeriod: v)),
           _doubleRow('Bollinger deviation', strategy.bollingerDeviation, 1, 4,
               (v) => strategy = strategy.copyWith(bollingerDeviation: v)),
-          _numberRow('Minimum AI confidence', strategy.minimumConfidence, 50, 98,
-              (v) => strategy = strategy.copyWith(minimumConfidence: v)),
+          _numberRow('Minimum AI confidence', strategy.minimumConfidence, 50,
+              98, (v) => strategy = strategy.copyWith(minimumConfidence: v)),
           const SizedBox(height: 12),
           _section('Risk Controls'),
           _slider('Account balance', balance, 100, 100000,
               (v) => setState(() => balance = v),
               valueText: '\$${balance.toStringAsFixed(0)}'),
-          _slider('Risk per trade', risk, .25, 3,
-              (v) => setState(() => risk = v),
+          _slider(
+              'Risk per trade', risk, .25, 3, (v) => setState(() => risk = v),
               valueText: '${risk.toStringAsFixed(2)}%'),
           _slider('Daily loss limit', lossLimit, 1, 10,
               (v) => setState(() => lossLimit = v),
@@ -111,7 +119,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   strategy.macdFast >= strategy.macdSlow) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Fast periods must be lower than slow periods.'),
+                    content:
+                        Text('Fast periods must be lower than slow periods.'),
                   ),
                 );
                 return;
@@ -131,7 +140,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 10),
           OutlinedButton(
-            onPressed: () => setState(() => strategy = StrategyProfile.oneMinute),
+            onPressed: () =>
+                setState(() => strategy = StrategyProfile.oneMinute),
             child: const Text('Restore Jontarius 1-Minute Defaults'),
           ),
         ],
@@ -141,7 +151,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _section(String title) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-        child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        child: Text(title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
       );
 
   Widget _numberRow(
@@ -155,14 +166,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: ListTile(
         title: Text(label),
         subtitle: Slider(
-          value: value.toDouble().clamp(min.toDouble(), max.toDouble()).toDouble(),
+          value:
+              value.toDouble().clamp(min.toDouble(), max.toDouble()).toDouble(),
           min: min.toDouble(),
           max: max.toDouble(),
           divisions: max - min,
           label: '$value',
           onChanged: (v) => setState(() => changed(v.round())),
         ),
-        trailing: Text('$value', style: const TextStyle(fontWeight: FontWeight.w900)),
+        trailing:
+            Text('$value', style: const TextStyle(fontWeight: FontWeight.w900)),
       ),
     );
   }
