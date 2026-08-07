@@ -4,10 +4,15 @@ import 'models.dart';
 import 'signal_engine.dart';
 import 'strategy_profile.dart';
 import 'market_data/twelve_data_service.dart';
+import 'integration/market_provider_config.dart';
+import 'integration/mt5_api_service.dart';
 
 class TradeXAppState extends ChangeNotifier {
   final _engine = TitanSignalEngine();
   final _liveData = TwelveDataService();
+  final _mt5 = Mt5ApiService(
+    baseUrl: MarketProviderConfig.mt5BaseUrl,
+  );
   Timer? _clockTimer;
 
   double accountBalance = 1000;
@@ -72,17 +77,78 @@ class TradeXAppState extends ChangeNotifier {
         strategy.macdSlow + strategy.macdSignal,
         60,
       ].reduce((a, b) => a > b ? a : b);
-      final result = await _liveData.fetchOneMinuteCandles(
-        selectedSymbol,
-        outputSize: requiredCandles + 40,
-      );
+
+      Future<LiveMarketResult> loadMarketData() async {
+        if (MarketProviderConfig.selectedProvider ==
+            MarketDataProvider.twelveData) {
+          return _liveData.fetchOneMinuteCandles(
+            selectedSymbol,
+            outputSize: requiredCandles + 40,
+          );
+        }
+
+        try {
+          final mt5Data = await _mt5.getCandles(
+            symbol: selectedSymbol.replaceAll('/', ''),
+            timeframe: 'M1',
+            count: requiredCandles + 40,
+          );
+
+          final rawCandles = mt5Data['candles'];
+
+          if (rawCandles is! List || rawCandles.isEmpty) {
+            throw const Mt5ApiException(
+              'MT5 returned no candle data.',
+            );
+          }
+
+          final candles = rawCandles.map<LiveCandle>((item) {
+            if (item is! Map) {
+              throw const Mt5ApiException(
+                'MT5 returned an invalid candle.',
+              );
+            }
+
+            final candle = Map<String, dynamic>.from(item);
+
+            return LiveCandle(
+              time: DateTime.parse(candle['time'].toString()),
+              open: (candle['open'] as num).toDouble(),
+              high: (candle['high'] as num).toDouble(),
+              low: (candle['low'] as num).toDouble(),
+              close: (candle['close'] as num).toDouble(),
+            );
+          }).toList();
+
+          return LiveMarketResult(
+            symbol: selectedSymbol,
+            candles: candles,
+            source: 'MetaTrader 5',
+            fetchedAt: DateTime.now().toUtc(),
+          );
+        } catch (_) {
+          if (MarketProviderConfig.selectedProvider ==
+              MarketDataProvider.metaTrader5) {
+            rethrow;
+          }
+
+          return _liveData.fetchOneMinuteCandles(
+            selectedSymbol,
+            outputSize: requiredCandles + 40,
+          );
+        }
+      }
+
+      final result = await loadMarketData();
       final closes = result.candles.map((c) => c.close).toList();
+
       final macd = TwelveDataService.macd(
         closes,
         strategy.macdFast,
         strategy.macdSlow,
         strategy.macdSignal,
       );
+
       final bands = TwelveDataService.bollinger(
         closes,
         strategy.bollingerPeriod,
@@ -92,11 +158,20 @@ class TradeXAppState extends ChangeNotifier {
       market = MarketSnapshot(
         symbol: selectedSymbol,
         price: closes.last,
-        emaFast: TwelveDataService.ema(closes, strategy.emaFast),
-        emaSlow: TwelveDataService.ema(closes, strategy.emaSlow),
+        emaFast: TwelveDataService.ema(
+          closes,
+          strategy.emaFast,
+        ),
+        emaSlow: TwelveDataService.ema(
+          closes,
+          strategy.emaSlow,
+        ),
         macd: macd.line,
         macdSignal: macd.signal,
-        rsi: TwelveDataService.rsi(closes, strategy.rsiPeriod),
+        rsi: TwelveDataService.rsi(
+          closes,
+          strategy.rsiPeriod,
+        ),
         bollingerUpper: bands.upper,
         bollingerMiddle: bands.middle,
         bollingerLower: bands.lower,
@@ -109,7 +184,9 @@ class TradeXAppState extends ChangeNotifier {
           result.candles,
           lookback: strategy.volumePeriod * 4,
         ),
-        volatility: TwelveDataService.volatility(result.candles),
+        volatility: TwelveDataService.volatility(
+          result.candles,
+        ),
         payout: payout,
         time: result.candles.last.time.toLocal(),
       );
@@ -153,7 +230,8 @@ class TradeXAppState extends ChangeNotifier {
 
   void _calculateTradeTimes() {
     final currentSignal = signal;
-    if (currentSignal == null || currentSignal.direction == SignalDirection.wait) {
+    if (currentSignal == null ||
+        currentSignal.direction == SignalDirection.wait) {
       entryTime = null;
       entryWindowEnd = null;
       expirationTime = null;
@@ -174,14 +252,16 @@ class TradeXAppState extends ChangeNotifier {
     );
   }
 
-  Duration? get timeUntilEntry => entryTime == null ? null : entryTime!.difference(now);
+  Duration? get timeUntilEntry =>
+      entryTime == null ? null : entryTime!.difference(now);
 
   bool get entryWindowOpen {
     if (entryTime == null || entryWindowEnd == null) return false;
     return !now.isBefore(entryTime!) && !now.isAfter(entryWindowEnd!);
   }
 
-  bool get entryMissed => entryWindowEnd != null && now.isAfter(entryWindowEnd!);
+  bool get entryMissed =>
+      entryWindowEnd != null && now.isAfter(entryWindowEnd!);
 
   String get entryStatus {
     if (signal == null || signal!.direction == SignalDirection.wait) {
@@ -220,7 +300,8 @@ class TradeXAppState extends ChangeNotifier {
   bool get canTrade {
     if (cooldownActive) return false;
     if (tradesToday >= maxTradesPerDay) return false;
-    if (dailyProfit <= -(accountBalance * dailyLossLimitPercent / 100)) return false;
+    if (dailyProfit <= -(accountBalance * dailyLossLimitPercent / 100))
+      return false;
     return true;
   }
 
@@ -242,12 +323,15 @@ class TradeXAppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  int get tradesToday => trades.where((t) =>
-      t.openedAt.year == DateTime.now().year &&
-      t.openedAt.month == DateTime.now().month &&
-      t.openedAt.day == DateTime.now().day).length;
+  int get tradesToday => trades
+      .where((t) =>
+          t.openedAt.year == DateTime.now().year &&
+          t.openedAt.month == DateTime.now().month &&
+          t.openedAt.day == DateTime.now().day)
+      .length;
 
-  double get dailyProfit => trades.where((t) => t.openedAt.day == DateTime.now().day)
+  double get dailyProfit => trades
+      .where((t) => t.openedAt.day == DateTime.now().day)
       .fold(0, (sum, t) => sum + t.profit);
 
   int get settledTrades => trades.where((t) => t.won != null).length;
